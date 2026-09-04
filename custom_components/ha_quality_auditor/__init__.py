@@ -44,7 +44,9 @@ CONFIG_SCHEMA = vol.Schema(
 )
 
 
-async def _async_setup_common(hass: HomeAssistant) -> None:
+async def _async_setup_common(
+    hass: HomeAssistant, entry: ConfigEntry | None = None
+) -> None:
     """Common setup logic for both YAML and config entry setups."""
     if DOMAIN in hass.data:
         return
@@ -75,11 +77,11 @@ async def _async_setup_common(hass: HomeAssistant) -> None:
     )
 
     # ── 3. Create coordinator & store in hass.data ───────────────────────
-    coordinator = QualityAuditCoordinator(hass)
+    coordinator = QualityAuditCoordinator(hass, config_entry=entry)
     hass.data[DOMAIN] = {"coordinator": coordinator}
 
-    # Perform the first audit refresh
-    await coordinator.async_config_entry_first_refresh()
+    # Perform initial audit refresh
+    await coordinator.async_refresh()
 
     # ── 4. Register WebSocket command for manual re-scan ─────────────────
     from homeassistant.components.websocket_api import (
@@ -110,7 +112,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     This runs when HA discovers the integration or loads configuration.yaml.
     """
     _LOGGER.info("Setting up %s integration via async_setup", DOMAIN)
-    await _async_setup_common(hass)
+    await _async_setup_common(hass, entry=None)
 
     # Load sensor platform via discovery for YAML setups
     hass.async_create_task(
@@ -124,7 +126,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Quality Auditor from a config entry (UI)."""
     _LOGGER.info("Setting up %s integration from config entry", DOMAIN)
-    await _async_setup_common(hass)
+    await _async_setup_common(hass, entry=entry)
     await hass.config_entries.async_forward_entry_setups(entry, ["sensor"])
     return True
 

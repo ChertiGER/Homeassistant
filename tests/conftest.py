@@ -34,6 +34,9 @@ if "homeassistant" not in sys.modules:
         async def async_config_entry_first_refresh(self):
             pass
 
+        async def async_refresh(self):
+            pass
+
         async def async_request_refresh(self):
             pass
 

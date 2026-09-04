@@ -8,8 +8,13 @@ from __future__ import annotations
 
 import logging
 
+from typing import TYPE_CHECKING
+
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+
+if TYPE_CHECKING:
+    from homeassistant.config_entries import ConfigEntry
 
 from .audit.engine import AuditEngine, AuditResult
 from .const import DOMAIN, SCAN_INTERVAL
@@ -20,13 +25,18 @@ _LOGGER = logging.getLogger(__name__)
 class QualityAuditCoordinator(DataUpdateCoordinator[AuditResult]):
     """Coordinator that runs the audit engine on a schedule."""
 
-    def __init__(self, hass: HomeAssistant) -> None:
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        config_entry: ConfigEntry | None = None,
+    ) -> None:
         """Initialise the coordinator with default scan interval."""
         super().__init__(
             hass,
             _LOGGER,
             name=DOMAIN,
             update_interval=SCAN_INTERVAL,
+            config_entry=config_entry,
         )
         self._engine = AuditEngine()
 

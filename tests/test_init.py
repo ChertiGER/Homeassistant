@@ -33,7 +33,7 @@ def setup_hass(mock_hass):
 async def test_async_setup_success(setup_hass):
     """Test successful integration setup."""
     with patch(
-        "custom_components.ha_quality_auditor.coordinator.QualityAuditCoordinator.async_config_entry_first_refresh",
+        "custom_components.ha_quality_auditor.coordinator.QualityAuditCoordinator.async_refresh",
         new_callable=AsyncMock,
     ), patch(
         "homeassistant.components.panel_custom.async_register_panel",
@@ -89,7 +89,7 @@ async def test_async_setup_entry_success(setup_hass):
     entry = MagicMock()
 
     with patch(
-        "custom_components.ha_quality_auditor.coordinator.QualityAuditCoordinator.async_config_entry_first_refresh",
+        "custom_components.ha_quality_auditor.coordinator.QualityAuditCoordinator.async_refresh",
         new_callable=AsyncMock,
     ), patch(
         "homeassistant.components.panel_custom.async_register_panel",
