@@ -4,6 +4,7 @@
 [![Python](https://img.shields.io/badge/Python-3.12%20%7C%203.13%20%7C%203.14-blue.svg)](https://www.python.org/)
 [![Code Style](https://img.shields.io/badge/Code%20Style-Black%20%2F%20Ruff-black.svg)](https://github.com/astral-sh/ruff)
 [![Tests](https://img.shields.io/badge/Tests-19%20passed-brightgreen.svg)]()
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-paypal.me%2FYHolz-FFDD00?style=flat&logo=buy-me-a-coffee&logoColor=black)](https://paypal.me/YHolz)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)]()
 
 A native **Home Assistant Custom Integration** providing continuous quality monitoring, proactive fault detection, and an **Industrial Leitstand (High-Performance HMI)** sidebar panel for your smart home.
@@ -135,6 +136,16 @@ uv pip install pytest pytest-asyncio voluptuous
 # Run tests
 .venv/bin/python -m pytest tests/ -v --tb=short
 ```
+
+---
+
+## ☕ Support & Coffee
+
+If you find the **Home Assistant Quality Auditor** helpful for keeping your smart home reliable and fault-free, consider buying me a coffee to support continued development:
+
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-paypal.me%2FYHolz-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://paypal.me/YHolz)
+
+Direct link: [paypal.me/YHolz](https://paypal.me/YHolz)
 
 ---
 

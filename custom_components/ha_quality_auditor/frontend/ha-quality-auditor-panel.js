@@ -210,6 +210,14 @@ class HaQualityAuditorPanel extends (LitElement ?? HTMLElement) {
             <span class="qa-subtitle">System Quality Audit</span>
           </div>
           <div class="qa-header-right">
+            <a
+              href="https://paypal.me/YHolz"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="qa-btn-coffee"
+            >
+              ☕ Buy me a coffee
+            </a>
             <span class="qa-timestamp">
               <ha-icon icon="mdi:clock-outline" class="qa-ts-icon"></ha-icon>
               ${timestamp}
@@ -442,6 +450,36 @@ class HaQualityAuditorPanel extends (LitElement ?? HTMLElement) {
         padding: 4px 10px;
         border-radius: 6px;
         font-weight: 500;
+      }
+
+      .qa-header-right {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        flex-wrap: wrap;
+      }
+
+      .qa-btn-coffee {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        background: rgba(255, 221, 0, 0.12);
+        color: #facc15;
+        border: 1px solid rgba(250, 204, 21, 0.35);
+        border-radius: 8px;
+        padding: 6px 14px;
+        font-size: 13px;
+        font-weight: 600;
+        text-decoration: none;
+        transition: transform var(--qa-transition), background var(--qa-transition), box-shadow var(--qa-transition);
+      }
+
+      .qa-btn-coffee:hover {
+        background: rgba(255, 221, 0, 0.22);
+        border-color: #facc15;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(250, 204, 21, 0.2);
+        color: #fef08a;
       }
 
       .qa-timestamp {
