@@ -1,0 +1,214 @@
+"""Shared pytest fixtures and HA module stubs for Quality Auditor tests.
+
+This conftest runs BEFORE any test module is collected, ensuring all
+homeassistant stub modules are registered exactly once in sys.modules.
+"""
+
+from __future__ import annotations
+
+import sys
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from types import ModuleType
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# HA Module Stubs (set once, shared by all test files)
+# ═══════════════════════════════════════════════════════════════════════
+
+# Only register if not already present (first conftest wins)
+if "homeassistant" not in sys.modules:
+
+    _ha_core = ModuleType("homeassistant.core")
+    _ha_core.HomeAssistant = MagicMock
+    _ha_core.callback = lambda f: f
+
+    class _StubDataUpdateCoordinator:
+        def __init__(self, *a, **kw):
+            self.data = None
+            self.hass = a[0] if a else None
+
+        async def async_config_entry_first_refresh(self):
+            pass
+
+        async def async_request_refresh(self):
+            pass
+
+        def __class_getitem__(cls, item):
+            return cls
+
+    class _StubCoordinatorEntity:
+        def __init__(self, coordinator):
+            self.coordinator = coordinator
+
+    _ha_helpers_uc = ModuleType("homeassistant.helpers.update_coordinator")
+    _ha_helpers_uc.DataUpdateCoordinator = _StubDataUpdateCoordinator
+    _ha_helpers_uc.CoordinatorEntity = _StubCoordinatorEntity
+
+    _panel_custom = ModuleType("homeassistant.components.panel_custom")
+    _panel_custom.async_register_panel = AsyncMock()
+
+    _http_mod = ModuleType("homeassistant.components.http")
+    _http_mod.StaticPathConfig = MagicMock
+
+    _ws_mod = ModuleType("homeassistant.components.websocket_api")
+    _ws_mod.async_register_command = MagicMock()
+    _ws_mod.async_response = lambda f: f
+    _ws_mod.websocket_command = lambda schema: (lambda f: f)
+
+    _discovery_mod = ModuleType("homeassistant.helpers.discovery")
+    _discovery_mod.async_load_platform = AsyncMock()
+
+    _typing_mod = ModuleType("homeassistant.helpers.typing")
+    _typing_mod.ConfigType = dict
+    _typing_mod.DiscoveryInfoType = dict
+
+    _sensor_mod = ModuleType("homeassistant.components.sensor")
+    _sensor_mod.SensorEntity = type("SensorEntity", (), {})
+    _sensor_mod.SensorStateClass = type(
+        "SensorStateClass", (), {"MEASUREMENT": "measurement"}
+    )
+
+    _entity_platform = ModuleType("homeassistant.helpers.entity_platform")
+    _entity_platform.AddEntitiesCallback = MagicMock
+
+    _recorder_history = ModuleType("homeassistant.components.recorder.history")
+    _recorder_history.get_significant_states = MagicMock()
+
+    _trace_mod = ModuleType("homeassistant.components.trace")
+    _trace_mod.async_list_traces = AsyncMock()
+
+    for mod_name, mod in [
+        ("homeassistant", ModuleType("homeassistant")),
+        ("homeassistant.core", _ha_core),
+        ("homeassistant.helpers", ModuleType("homeassistant.helpers")),
+        ("homeassistant.helpers.update_coordinator", _ha_helpers_uc),
+        ("homeassistant.helpers.discovery", _discovery_mod),
+        ("homeassistant.helpers.typing", _typing_mod),
+        ("homeassistant.helpers.entity_platform", _entity_platform),
+        ("homeassistant.components", ModuleType("homeassistant.components")),
+        ("homeassistant.components.panel_custom", _panel_custom),
+        ("homeassistant.components.http", _http_mod),
+        ("homeassistant.components.websocket_api", _ws_mod),
+        ("homeassistant.components.sensor", _sensor_mod),
+        ("homeassistant.components.recorder", ModuleType("homeassistant.components.recorder")),
+        ("homeassistant.components.recorder.history", _recorder_history),
+        ("homeassistant.components.trace", _trace_mod),
+    ]:
+        sys.modules[mod_name] = mod
+
+    # Add custom_components to path
+    sys.path.insert(
+        0,
+        str(__import__("pathlib").Path(__file__).resolve().parent.parent / "custom_components"),
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Mock State Object
+# ═══════════════════════════════════════════════════════════════════════
+
+
+@dataclass
+class MockState:
+    """Minimal mock of homeassistant.core.State."""
+
+    entity_id: str
+    state: str
+    attributes: dict = None
+    last_changed: datetime = None
+
+    def __post_init__(self):
+        if self.attributes is None:
+            self.attributes = {}
+        if self.last_changed is None:
+            self.last_changed = datetime.now(UTC)
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Mock HomeAssistant
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class MockStates:
+    """Mock of hass.states with async_all() support."""
+
+    def __init__(self, state_list: list[MockState] | None = None):
+        self._states = {s.entity_id: s for s in (state_list or [])}
+
+    def async_all(self, domain: str | None = None) -> list[MockState]:
+        if domain is None:
+            return list(self._states.values())
+        return [
+            s for s in self._states.values()
+            if s.entity_id.startswith(f"{domain}.")
+        ]
+
+    def get(self, entity_id: str) -> MockState | None:
+        return self._states.get(entity_id)
+
+
+class MockHass:
+    """Minimal mock of HomeAssistant core object."""
+
+    def __init__(self, state_list: list[MockState] | None = None):
+        self.states = MockStates(state_list)
+        self.async_add_executor_job = AsyncMock()
+        self.data = {}
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Helper Functions
+# ═══════════════════════════════════════════════════════════════════════
+
+
+def make_history_states(
+    entity_id: str,
+    values: list[str],
+    interval_minutes: float = 30,
+    start: datetime | None = None,
+) -> list[MockState]:
+    """Generate a list of MockState entries simulating recorder history."""
+    if start is None:
+        start = datetime.now(UTC) - timedelta(minutes=interval_minutes * len(values))
+
+    return [
+        MockState(
+            entity_id=entity_id,
+            state=val,
+            last_changed=start + timedelta(minutes=i * interval_minutes),
+        )
+        for i, val in enumerate(values)
+    ]
+
+
+def make_trace_summary(
+    state: str = "stopped",
+    error: str | None = None,
+    duration: float = 0.1,
+) -> dict:
+    """Create a mock automation trace summary."""
+    summary = {
+        "state": state,
+        "duration": duration,
+        "timestamp": datetime.now(UTC).isoformat(),
+    }
+    if state == "error" and error:
+        summary["error"] = error
+    if error and state != "error":
+        summary["result"] = {"error": error}
+    return summary
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Pytest Fixtures
+# ═══════════════════════════════════════════════════════════════════════
+
+
+@pytest.fixture
+def mock_hass():
+    """Return a bare MockHass with no states."""
+    return MockHass()
