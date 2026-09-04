@@ -13,6 +13,7 @@ from homeassistant.components.sensor import (
     SensorEntity,
     SensorStateClass,
 )
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
@@ -39,6 +40,23 @@ async def async_setup_platform(
             FindingsCountSensor(coordinator),
         ],
         update_before_add=False,  # Coordinator already has data
+    )
+
+
+async def async_setup_entry(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    async_add_entities: AddEntitiesCallback,
+) -> None:
+    """Set up sensor entities from a config entry."""
+    coordinator: QualityAuditCoordinator = hass.data[DOMAIN]["coordinator"]
+
+    async_add_entities(
+        [
+            QualityScoreSensor(coordinator),
+            FindingsCountSensor(coordinator),
+        ],
+        update_before_add=False,
     )
 
 

@@ -16,6 +16,7 @@ import voluptuous as vol
 
 from homeassistant.components import panel_custom
 from homeassistant.components.http import StaticPathConfig
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import discovery
 from homeassistant.helpers.typing import ConfigType
@@ -43,12 +44,12 @@ CONFIG_SCHEMA = vol.Schema(
 )
 
 
-async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """Set up the Quality Auditor integration.
+async def _async_setup_common(hass: HomeAssistant) -> None:
+    """Common setup logic for both YAML and config entry setups."""
+    if DOMAIN in hass.data:
+        return
 
-    This runs when HA discovers the integration in custom_components/.
-    """
-    _LOGGER.info("Setting up %s integration", DOMAIN)
+    _LOGGER.info("Setting up %s common resources", DOMAIN)
 
     # ── 1. Register static path for frontend assets (async, non-blocking) ──
     await hass.http.async_register_static_paths(
@@ -102,10 +103,36 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
     async_register_command(hass, handle_run_audit)
 
-    # ── 5. Load sensor platform via discovery ────────────────────────────
+
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Set up the Quality Auditor integration via YAML.
+
+    This runs when HA discovers the integration or loads configuration.yaml.
+    """
+    _LOGGER.info("Setting up %s integration via async_setup", DOMAIN)
+    await _async_setup_common(hass)
+
+    # Load sensor platform via discovery for YAML setups
     hass.async_create_task(
         discovery.async_load_platform(hass, "sensor", DOMAIN, {}, config)
     )
 
     _LOGGER.info("%s integration setup complete", DOMAIN)
     return True
+
+
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Set up Quality Auditor from a config entry (UI)."""
+    _LOGGER.info("Setting up %s integration from config entry", DOMAIN)
+    await _async_setup_common(hass)
+    await hass.config_entries.async_forward_entry_setups(entry, ["sensor"])
+    return True
+
+
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Unload a config entry."""
+    _LOGGER.info("Unloading %s config entry", DOMAIN)
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, ["sensor"])
+    if unload_ok and DOMAIN in hass.data:
+        hass.data.pop(DOMAIN, None)
+    return unload_ok

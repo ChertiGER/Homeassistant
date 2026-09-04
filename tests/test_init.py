@@ -74,3 +74,46 @@ async def test_async_setup_success(setup_hass):
         mock_discovery.assert_called_once_with(
             setup_hass, "sensor", DOMAIN, {}, {DOMAIN: {}}
         )
+
+
+@pytest.mark.asyncio
+async def test_async_setup_entry_success(setup_hass):
+    """Test successful config entry setup."""
+    from custom_components.ha_quality_auditor import async_setup_entry, async_unload_entry
+    from custom_components.ha_quality_auditor.config_flow import QualityAuditorConfigFlow
+
+    setup_hass.config_entries = MagicMock()
+    setup_hass.config_entries.async_forward_entry_setups = AsyncMock()
+    setup_hass.config_entries.async_unload_platforms = AsyncMock(return_value=True)
+
+    entry = MagicMock()
+
+    with patch(
+        "custom_components.ha_quality_auditor.coordinator.QualityAuditCoordinator.async_config_entry_first_refresh",
+        new_callable=AsyncMock,
+    ), patch(
+        "homeassistant.components.panel_custom.async_register_panel",
+        new_callable=AsyncMock,
+    ):
+        result = await async_setup_entry(setup_hass, entry)
+        assert result is True
+        setup_hass.config_entries.async_forward_entry_setups.assert_called_once_with(
+            entry, ["sensor"]
+        )
+
+        unload_result = await async_unload_entry(setup_hass, entry)
+        assert unload_result is True
+        assert DOMAIN not in setup_hass.data
+
+    # Test config flow steps
+    flow = QualityAuditorConfigFlow()
+    flow.hass = setup_hass
+
+    form_result = await flow.async_step_user(user_input=None)
+    assert form_result["type"] == "form"
+    assert form_result["step_id"] == "user"
+
+    create_result = await flow.async_step_user(user_input={})
+    assert create_result["type"] == "create_entry"
+    assert create_result["title"] == "Quality Auditor"
+

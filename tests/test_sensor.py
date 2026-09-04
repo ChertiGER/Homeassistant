@@ -6,11 +6,13 @@ the coordinator's audit result data. Stubs are set up in conftest.py.
 
 from __future__ import annotations
 
+from unittest.mock import MagicMock
+
 import pytest
 
 # Import modules under test (stubs already registered by conftest.py)
-from ha_quality_auditor.audit.engine import AuditResult, Finding
-from ha_quality_auditor.sensor import QualityScoreSensor, FindingsCountSensor
+from custom_components.ha_quality_auditor.audit.engine import AuditResult, Finding
+from custom_components.ha_quality_auditor.sensor import QualityScoreSensor, FindingsCountSensor
 
 
 # ── Mock Coordinator ─────────────────────────────────────────────────
@@ -121,3 +123,25 @@ class TestFindingsCountSensor:
         assert attrs["critical"] == 2
         assert attrs["major"] == 1
         assert attrs["minor"] == 1
+
+
+@pytest.mark.asyncio
+async def test_async_setup_entry_sensors():
+    """Test async_setup_entry registers both sensors."""
+    from custom_components.ha_quality_auditor.const import DOMAIN
+    from custom_components.ha_quality_auditor.sensor import async_setup_entry
+
+    hass = MagicMock()
+    coordinator = MockCoordinator()
+    hass.data = {DOMAIN: {"coordinator": coordinator}}
+
+    added_entities = []
+    def _add_entities(entities, update_before_add=False):
+        added_entities.extend(entities)
+
+    await async_setup_entry(hass, MagicMock(), _add_entities)
+
+    assert len(added_entities) == 2
+    assert isinstance(added_entities[0], QualityScoreSensor)
+    assert isinstance(added_entities[1], FindingsCountSensor)
+

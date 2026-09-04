@@ -81,20 +81,56 @@ if "homeassistant" not in sys.modules:
     _trace_mod = ModuleType("homeassistant.components.trace")
     _trace_mod.async_list_traces = AsyncMock()
 
+    class _ConfigFlow:
+        VERSION = 1
+
+        def __init_subclass__(cls, **kwargs):
+            super().__init_subclass__()
+
+        async def async_set_unique_id(self, unique_id):
+            pass
+
+        def _abort_if_unique_id_configured(self):
+            pass
+
+        def async_create_entry(self, title, data):
+            return {"type": "create_entry", "title": title, "data": data}
+
+        def async_show_form(self, step_id, data_schema=None, errors=None):
+            return {"type": "form", "step_id": step_id}
+
+    _config_entries = ModuleType("homeassistant.config_entries")
+    _config_entries.ConfigEntry = MagicMock
+    _config_entries.ConfigFlow = _ConfigFlow
+
+    _data_entry_flow = ModuleType("homeassistant.data_entry_flow")
+    _data_entry_flow.FlowResult = dict
+
+    _ha_root = ModuleType("homeassistant")
+    _ha_root.__path__ = []
+    _ha_helpers = ModuleType("homeassistant.helpers")
+    _ha_helpers.__path__ = []
+    _ha_components = ModuleType("homeassistant.components")
+    _ha_components.__path__ = []
+    _ha_recorder = ModuleType("homeassistant.components.recorder")
+    _ha_recorder.__path__ = []
+
     for mod_name, mod in [
-        ("homeassistant", ModuleType("homeassistant")),
+        ("homeassistant", _ha_root),
         ("homeassistant.core", _ha_core),
-        ("homeassistant.helpers", ModuleType("homeassistant.helpers")),
+        ("homeassistant.config_entries", _config_entries),
+        ("homeassistant.data_entry_flow", _data_entry_flow),
+        ("homeassistant.helpers", _ha_helpers),
         ("homeassistant.helpers.update_coordinator", _ha_helpers_uc),
         ("homeassistant.helpers.discovery", _discovery_mod),
         ("homeassistant.helpers.typing", _typing_mod),
         ("homeassistant.helpers.entity_platform", _entity_platform),
-        ("homeassistant.components", ModuleType("homeassistant.components")),
+        ("homeassistant.components", _ha_components),
         ("homeassistant.components.panel_custom", _panel_custom),
         ("homeassistant.components.http", _http_mod),
         ("homeassistant.components.websocket_api", _ws_mod),
         ("homeassistant.components.sensor", _sensor_mod),
-        ("homeassistant.components.recorder", ModuleType("homeassistant.components.recorder")),
+        ("homeassistant.components.recorder", _ha_recorder),
         ("homeassistant.components.recorder.history", _recorder_history),
         ("homeassistant.components.trace", _trace_mod),
     ]:
