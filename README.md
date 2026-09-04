@@ -70,9 +70,23 @@ A native **Home Assistant Custom Integration** providing continuous quality moni
 
 ## 🚀 Installation & Setup
 
-### Method 1: Manual Installation
+### Method 1: Installation via HACS (Recommended)
 
-1. Copy the `custom_components/ha_quality_auditor` folder into your Home Assistant `/config/custom_components/` directory:
+[![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz/)
+
+1. Open **HACS** in your Home Assistant sidebar.
+2. Click the **three dots menu (⋮)** in the top-right corner and select **Custom repositories** (*Benutzerdefinierte Repositories*).
+3. Fill in the repository details:
+   * **Repository:** `https://github.com/ChertiGER/Homeassistant`
+   * **Category / Type:** `Integration`
+4. Click **Add** (*Hinzufügen*).
+5. Find **Quality Auditor** in your HACS integrations list, click on it, and select **Download** (*Herunterladen*).
+6. Restart Home Assistant Core (**Settings → System → Restart**).
+7. The **Quality Audit** sidebar panel will appear automatically in the left menu.
+
+### Method 2: Manual Installation
+
+1. Copy the `custom_components/ha_quality_auditor` directory into your Home Assistant config directory:
    ```bash
    cp -r custom_components/ha_quality_auditor /config/custom_components/
    ```
