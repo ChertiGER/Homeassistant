@@ -24,6 +24,8 @@ from .models import AuditResult, Finding
 from .rules_automations import AutomationTriageRule
 from .rules_flaky import ChatterIndexRule
 from .rules_frozen import FrozenSensorRule
+from .rules_integrations import IntegrationHealthRule
+from .rules_updates import PendingUpdateRule
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -50,6 +52,8 @@ class AuditEngine:
             FrozenSensorRule(),
             ChatterIndexRule(),
             AutomationTriageRule(),
+            PendingUpdateRule(),
+            IntegrationHealthRule(),
         ]
 
     async def run_audit(self, hass: HomeAssistant) -> AuditResult:

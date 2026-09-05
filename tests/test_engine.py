@@ -16,8 +16,16 @@ from ha_quality_auditor.audit.engine import AuditEngine, AuditResult, Finding
 from ha_quality_auditor.audit.rules_frozen import FrozenSensorRule
 from ha_quality_auditor.audit.rules_flaky import ChatterIndexRule
 from ha_quality_auditor.audit.rules_automations import AutomationTriageRule
+from ha_quality_auditor.audit.rules_updates import PendingUpdateRule
+from ha_quality_auditor.audit.rules_integrations import IntegrationHealthRule
 
-from conftest import MockHass, MockState, make_history_states, make_trace_summary
+from conftest import (
+    MockConfigEntry,
+    MockHass,
+    MockState,
+    make_history_states,
+    make_trace_summary,
+)
 
 # Reference to trace stub module for setting per-test mock functions
 _trace_mod = sys.modules["homeassistant.components.trace"]
@@ -426,6 +434,194 @@ class TestAutomationTriageRule:
         assert checked == 1
         assert len(findings) == 1
         assert "ServiceNotFound" in findings[0].description
+
+
+# ── Pending Updates ───────────────────────────────────────────────────
+
+
+class TestPendingUpdateRule:
+    """Tests for the pending software/firmware update rule."""
+
+    @pytest.mark.asyncio
+    async def test_update_available_flagged_minor(self):
+        """Update entity with state 'on' → MINOR finding."""
+        hass = MockHass([
+            MockState(
+                entity_id="update.core_update",
+                state="on",
+                attributes={
+                    "title": "Home Assistant Core",
+                    "installed_version": "2026.8.3",
+                    "latest_version": "2026.9.0",
+                },
+            ),
+        ])
+
+        rule = PendingUpdateRule()
+        findings, checked = await rule.evaluate(hass)
+
+        assert checked == 1
+        assert len(findings) == 1
+        assert findings[0].severity == "MINOR"
+        assert findings[0].rule == "Pending Update"
+        assert findings[0].category == "Updates"
+        assert "2026.8.3 → 2026.9.0" in findings[0].description
+
+    @pytest.mark.asyncio
+    async def test_update_skipped_ignored(self):
+        """Explicitly skipped update version → no finding."""
+        hass = MockHass([
+            MockState(
+                entity_id="update.esphome_plug",
+                state="on",
+                attributes={
+                    "title": "Smart Plug",
+                    "installed_version": "1.0.0",
+                    "latest_version": "2.0.0",
+                    "skipped_version": "2.0.0",
+                },
+            ),
+        ])
+
+        rule = PendingUpdateRule()
+        findings, checked = await rule.evaluate(hass)
+
+        assert checked == 1
+        assert len(findings) == 0
+
+    @pytest.mark.asyncio
+    async def test_up_to_date_passes(self):
+        """Update entity with state 'off' → no finding."""
+        hass = MockHass([
+            MockState(
+                entity_id="update.shelly_relay",
+                state="off",
+                attributes={"installed_version": "1.4.0", "latest_version": "1.4.0"},
+            ),
+        ])
+
+        rule = PendingUpdateRule()
+        findings, checked = await rule.evaluate(hass)
+
+        assert checked == 1
+        assert len(findings) == 0
+
+
+# ── Integration Health ────────────────────────────────────────────────
+
+
+class TestIntegrationHealthRule:
+    """Tests for the integration health and orphan detection rule."""
+
+    @pytest.mark.asyncio
+    async def test_setup_error_flagged_critical(self):
+        """Config entry with setup_error → CRITICAL finding."""
+        hass = MockHass(
+            config_entries=[
+                MockConfigEntry(
+                    entry_id="abc123456789",
+                    domain="tado",
+                    title="Zuhause",
+                    state="setup_error",
+                ),
+            ]
+        )
+
+        rule = IntegrationHealthRule()
+        findings, checked = await rule.evaluate(hass)
+
+        assert checked == 1
+        assert len(findings) == 1
+        assert findings[0].severity == "CRITICAL"
+        assert findings[0].rule == "Integration Setup Error"
+        assert findings[0].category == "Integrations"
+        assert "tado" in findings[0].description
+
+    @pytest.mark.asyncio
+    async def test_setup_retry_flagged_major(self):
+        """Config entry stuck in setup_retry → MAJOR finding."""
+        hass = MockHass(
+            config_entries=[
+                MockConfigEntry(
+                    entry_id="xyz987654321",
+                    domain="nextcloud",
+                    title="My Cloud",
+                    state="setup_retry",
+                ),
+            ]
+        )
+
+        rule = IntegrationHealthRule()
+        findings, checked = await rule.evaluate(hass)
+
+        assert checked == 1
+        assert len(findings) == 1
+        assert findings[0].severity == "MAJOR"
+        assert findings[0].rule == "Integration Reconnect Loop"
+
+    @pytest.mark.asyncio
+    async def test_orphaned_not_loaded_flagged_minor(self):
+        """Config entry not_loaded and not disabled → MINOR finding."""
+        hass = MockHass(
+            config_entries=[
+                MockConfigEntry(
+                    entry_id="old123456789",
+                    domain="zha",
+                    title="Old Zigbee Dongle",
+                    state="not_loaded",
+                    disabled_by=None,
+                ),
+            ]
+        )
+
+        rule = IntegrationHealthRule()
+        findings, checked = await rule.evaluate(hass)
+
+        assert checked == 1
+        assert len(findings) == 1
+        assert findings[0].severity == "MINOR"
+        assert findings[0].rule == "Orphaned Integration"
+
+    @pytest.mark.asyncio
+    async def test_user_disabled_ignored(self):
+        """Config entry disabled by user → no finding."""
+        hass = MockHass(
+            config_entries=[
+                MockConfigEntry(
+                    entry_id="dis123456789",
+                    domain="alexa_media",
+                    title="Alexa Media",
+                    state="not_loaded",
+                    disabled_by="user",
+                ),
+            ]
+        )
+
+        rule = IntegrationHealthRule()
+        findings, checked = await rule.evaluate(hass)
+
+        assert checked == 1
+        assert len(findings) == 0
+
+    @pytest.mark.asyncio
+    async def test_loaded_integration_passes(self):
+        """Config entry in state loaded → no finding."""
+        hass = MockHass(
+            config_entries=[
+                MockConfigEntry(
+                    entry_id="ok123456789",
+                    domain="shelly",
+                    title="Kitchen Shelly",
+                    state="loaded",
+                ),
+            ]
+        )
+
+        rule = IntegrationHealthRule()
+        findings, checked = await rule.evaluate(hass)
+
+        assert checked == 1
+        assert len(findings) == 0
 
 
 # ── Quality Score Calculation ───────────────────────────────────────

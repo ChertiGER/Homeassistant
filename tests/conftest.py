@@ -190,13 +190,42 @@ class MockStates:
         return self._states.get(entity_id)
 
 
+@dataclass
+class MockConfigEntry:
+    """Minimal mock of homeassistant.config_entries.ConfigEntry."""
+
+    entry_id: str
+    domain: str
+    title: str = ""
+    state: str = "loaded"
+    disabled_by: str | None = None
+
+
+class MockConfigEntries:
+    """Mock of hass.config_entries with async_entries() support."""
+
+    def __init__(self, entries: list[MockConfigEntry] | None = None):
+        self._entries = entries or []
+
+    def async_entries(self, domain: str | None = None) -> list[MockConfigEntry]:
+        if domain is None:
+            return list(self._entries)
+        return [e for e in self._entries if e.domain == domain]
+
+
 class MockHass:
     """Minimal mock of HomeAssistant core object."""
 
-    def __init__(self, state_list: list[MockState] | None = None):
+    def __init__(
+        self,
+        state_list: list[MockState] | None = None,
+        config_entries: list[MockConfigEntry] | None = None,
+    ):
         self.states = MockStates(state_list)
+        self.config_entries = MockConfigEntries(config_entries)
         self.async_add_executor_job = AsyncMock()
         self.data = {}
+
 
 
 # ═══════════════════════════════════════════════════════════════════════

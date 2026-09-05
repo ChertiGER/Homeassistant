@@ -36,3 +36,5 @@ htmlcov/
 # HA specific local artifacts
 *.log
 *.db
+*.zip
+
