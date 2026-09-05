@@ -10,7 +10,7 @@ SCAN_INTERVAL = timedelta(hours=1)
 
 # ── Audit Rule: Frozen Sensor ───────────────────────────────────────
 FROZEN_WINDOW_HOURS = 6
-MIN_HISTORY_POINTS = 2  # Minimum data points to judge frozen state
+MIN_HISTORY_POINTS = 8  # Minimum samples in rolling window to evaluate frozen state
 
 # ── Audit Rule: State Chatter Index ──────────────────────────────────
 CHATTER_WINDOW_MINUTES = 15

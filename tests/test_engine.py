@@ -31,12 +31,16 @@ class TestFrozenSensorRule:
 
     @pytest.mark.asyncio
     async def test_frozen_sensor_detected(self):
-        """Sensor with identical values over 6h → MAJOR finding."""
+        """Fluctuating environmental sensor with 12 identical values over 6h → MAJOR finding."""
         hass = MockHass([
             MockState(
                 entity_id="sensor.outdoor_temp",
                 state="18.5",
-                attributes={"unit_of_measurement": "°C"},
+                attributes={
+                    "unit_of_measurement": "°C",
+                    "device_class": "temperature",
+                    "friendly_name": "Outdoor Temperature",
+                },
             ),
         ])
 
@@ -58,6 +62,7 @@ class TestFrozenSensorRule:
         assert findings[0].rule == "Frozen Sensor"
         assert findings[0].category == "Sensors"
         assert "18.5" in findings[0].description
+        assert "Outdoor Temperature" in findings[0].description
 
     @pytest.mark.asyncio
     async def test_sensor_with_variance_passes(self):
@@ -66,15 +71,18 @@ class TestFrozenSensorRule:
             MockState(
                 entity_id="sensor.indoor_temp",
                 state="22.1",
-                attributes={"unit_of_measurement": "°C"},
+                attributes={
+                    "unit_of_measurement": "°C",
+                    "device_class": "temperature",
+                },
             ),
         ])
 
         normal_history = {
             "sensor.indoor_temp": make_history_states(
                 "sensor.indoor_temp",
-                ["21.0", "21.3", "21.8", "22.0", "22.1", "21.9"],
-                interval_minutes=60,
+                ["21.0", "21.3", "21.8", "22.0", "22.1", "21.9", "22.0", "22.2"],
+                interval_minutes=45,
             ),
         }
         hass.async_add_executor_job = AsyncMock(return_value=normal_history)
@@ -86,20 +94,23 @@ class TestFrozenSensorRule:
         assert len(findings) == 0
 
     @pytest.mark.asyncio
-    async def test_insufficient_history_minor(self):
-        """Sensor with only 1 data point → MINOR finding (data gap)."""
+    async def test_insufficient_history_not_flagged(self):
+        """Sensor with only 1 data point (normal recorder behavior) → NO finding."""
         hass = MockHass([
             MockState(
-                entity_id="sensor.new_sensor",
-                state="42.0",
-                attributes={"unit_of_measurement": "W"},
+                entity_id="sensor.living_room_temp",
+                state="21.5",
+                attributes={
+                    "unit_of_measurement": "°C",
+                    "device_class": "temperature",
+                },
             ),
         ])
 
         sparse_history = {
-            "sensor.new_sensor": make_history_states(
-                "sensor.new_sensor",
-                ["42.0"],
+            "sensor.living_room_temp": make_history_states(
+                "sensor.living_room_temp",
+                ["21.5"],
                 interval_minutes=60,
             ),
         }
@@ -109,8 +120,97 @@ class TestFrozenSensorRule:
         findings, checked = await rule.evaluate(hass)
 
         assert checked == 1
-        assert len(findings) == 1
-        assert findings[0].severity == "MINOR"
+        assert len(findings) == 0
+
+    @pytest.mark.asyncio
+    async def test_battery_sensor_excluded(self):
+        """Battery sensor staying at 100% → excluded from frozen check."""
+        hass = MockHass([
+            MockState(
+                entity_id="sensor.door_lock_battery",
+                state="100",
+                attributes={
+                    "unit_of_measurement": "%",
+                    "device_class": "battery",
+                },
+            ),
+        ])
+
+        rule = FrozenSensorRule()
+        findings, checked = await rule.evaluate(hass)
+
+        assert checked == 0
+        assert len(findings) == 0
+
+    @pytest.mark.asyncio
+    async def test_energy_total_increasing_excluded(self):
+        """Cumulative energy meter → excluded from frozen check."""
+        hass = MockHass([
+            MockState(
+                entity_id="sensor.solar_energy_produced",
+                state="1234.5",
+                attributes={
+                    "unit_of_measurement": "kWh",
+                    "device_class": "energy",
+                    "state_class": "total_increasing",
+                },
+            ),
+        ])
+
+        rule = FrozenSensorRule()
+        findings, checked = await rule.evaluate(hass)
+
+        assert checked == 0
+        assert len(findings) == 0
+
+    @pytest.mark.asyncio
+    async def test_setpoint_excluded(self):
+        """Target setpoint entity → excluded by substring."""
+        hass = MockHass([
+            MockState(
+                entity_id="sensor.thermostat_target_temperature",
+                state="21.0",
+                attributes={
+                    "unit_of_measurement": "°C",
+                    "device_class": "temperature",
+                },
+            ),
+        ])
+
+        rule = FrozenSensorRule()
+        findings, checked = await rule.evaluate(hass)
+
+        assert checked == 0
+        assert len(findings) == 0
+
+    @pytest.mark.asyncio
+    async def test_idle_zero_excluded(self):
+        """Sensor resting at 0.0 → excluded from freeze alert."""
+        hass = MockHass([
+            MockState(
+                entity_id="sensor.rain_rate",
+                state="0.0",
+                attributes={
+                    "unit_of_measurement": "µg/m³",
+                    "device_class": "pm25",
+                },
+            ),
+        ])
+
+        zero_history = {
+            "sensor.rain_rate": make_history_states(
+                "sensor.rain_rate",
+                ["0.0"] * 10,
+                interval_minutes=30,
+            ),
+        }
+        hass.async_add_executor_job = AsyncMock(return_value=zero_history)
+
+        rule = FrozenSensorRule()
+        findings, checked = await rule.evaluate(hass)
+
+        assert checked == 1
+        assert len(findings) == 0
 
 
 # ── State Chatter Index ───────────────────────────────────────────────
@@ -248,6 +348,84 @@ class TestAutomationTriageRule:
 
         assert checked == 1
         assert len(findings) == 0
+
+    @pytest.mark.asyncio
+    async def test_automation_slow_calculated_from_timestamps(self):
+        """Automation with duration calculated from start/finish timestamps."""
+        hass = MockHass([
+            MockState(
+                entity_id="automation.timestamp_slow",
+                state="on",
+                attributes={"friendly_name": "Timestamp Slow Automation"},
+            ),
+        ])
+
+        traces = [
+            {
+                "state": "stopped",
+                "timestamp": {
+                    "start": "2026-09-05T10:00:00.000000+00:00",
+                    "finish": "2026-09-05T10:00:04.500000+00:00",
+                },
+            }
+        ]
+        _trace_mod.async_list_traces = AsyncMock(return_value=traces)
+
+        rule = AutomationTriageRule()
+        findings, checked = await rule.evaluate(hass)
+
+        assert checked == 1
+        assert len(findings) == 1
+        assert findings[0].severity == "MAJOR"
+        assert findings[0].rule == "Automation Slow"
+        assert "4500ms" in findings[0].description
+
+    @pytest.mark.asyncio
+    async def test_automation_disabled_skipped(self):
+        """Disabled automation (state == 'off') → skipped from error checks."""
+        hass = MockHass([
+            MockState(
+                entity_id="automation.disabled_with_error",
+                state="off",
+                attributes={"friendly_name": "Disabled Automation"},
+            ),
+        ])
+
+        traces = [
+            make_trace_summary(state="error", error="Broken"),
+        ]
+        _trace_mod.async_list_traces = AsyncMock(return_value=traces)
+
+        rule = AutomationTriageRule()
+        findings, checked = await rule.evaluate(hass)
+
+        assert checked == 1
+        assert len(findings) == 0
+
+    @pytest.mark.asyncio
+    async def test_automation_lookup_by_attribute_id(self):
+        """UI automations with id attribute → trace looked up via attributes['id']."""
+        hass = MockHass([
+            MockState(
+                entity_id="automation.living_room_lights",
+                state="on",
+                attributes={"id": "1715869129139", "friendly_name": "Living Room Lights"},
+            ),
+        ])
+
+        async def mock_list(hass, domain, key):
+            if key == "1715869129139":
+                return [make_trace_summary(state="error", error="ServiceNotFound")]
+            return []
+
+        _trace_mod.async_list_traces = AsyncMock(side_effect=mock_list)
+
+        rule = AutomationTriageRule()
+        findings, checked = await rule.evaluate(hass)
+
+        assert checked == 1
+        assert len(findings) == 1
+        assert "ServiceNotFound" in findings[0].description
 
 
 # ── Quality Score Calculation ───────────────────────────────────────

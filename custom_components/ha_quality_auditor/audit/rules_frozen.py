@@ -1,8 +1,15 @@
 """Frozen Sensor Detection.
 
-Detects analog sensors whose float value has remained perfectly unchanged
-(Δ = 0.0) across the configured rolling window, indicating a firmware lockup,
-communication failure, or misconfigured polling interval.
+Detects fluctuating environmental analog sensors whose float value has remained
+perfectly unchanged (Δ = 0.0) across the rolling window despite active reporting,
+indicating firmware lockup, stuck hardware, or misconfigured polling.
+
+Strictly excludes:
+- Batteries (which naturally remain at a fixed percentage for long periods)
+- Cumulative counters / energy meters (totals that only increase with consumption)
+- Setpoints, targets, thresholds, limits, and configuration offsets
+- Idle 0.0 readings (e.g. 0 W power, 0 A current, 0 mm rain)
+- Entities with insufficient samples (normal recorder behavior when state is unchanged)
 
 Strictly read-only: queries Recorder history, never modifies state.
 """
@@ -18,40 +25,128 @@ from ..const import (
     FROZEN_WINDOW_HOURS,
     MIN_HISTORY_POINTS,
     SEVERITY_MAJOR,
-    SEVERITY_MINOR,
 )
 from .models import Finding
 
 _LOGGER = logging.getLogger(__name__)
 
+# Environmental device classes that naturally fluctuate over a 6h period
+_FREEZABLE_DEVICE_CLASSES = {
+    "temperature",
+    "humidity",
+    "atmospheric_pressure",
+    "pressure",
+    "illuminance",
+    "carbon_dioxide",
+    "carbon_monoxide",
+    "volatile_organic_compounds",
+    "volatile_organic_compounds_parts",
+    "pm1",
+    "pm25",
+    "pm10",
+    "aqi",
+    "sound_pressure",
+}
+
+# Physical units corresponding to environmental/fluctuating measurements
+_FREEZABLE_UNITS = {
+    "°C",
+    "°F",
+    "K",
+    "hPa",
+    "mbar",
+    "bar",
+    "lx",
+    "lm",
+    "ppm",
+    "ppb",
+    "µg/m³",
+    "ug/m3",
+    "dB",
+    "dBA",
+}
+
+# Classes that must NEVER be flagged as frozen (counters, batteries, static attributes)
+_EXCLUDED_DEVICE_CLASSES = {
+    "battery",
+    "energy",
+    "gas",
+    "water",
+    "monetary",
+    "duration",
+    "distance",
+    "date",
+    "timestamp",
+    "volume",
+    "volume_storage",
+    "data_rate",
+    "data_size",
+    "power_factor",
+}
+
+_EXCLUDED_STATE_CLASSES = {
+    "total",
+    "total_increasing",
+}
+
+_EXCLUDED_ENTITY_SUBSTRINGS = (
+    "battery",
+    "_target",
+    "_setpoint",
+    "_threshold",
+    "_limit",
+    "_preset",
+    "_setting",
+    "_offset",
+    "_min",
+    "_max",
+)
+
 
 class FrozenSensorRule:
-    """Evaluate all analog sensors for frozen state over a rolling window."""
+    """Evaluate fluctuating environmental sensors for frozen state over a rolling window."""
 
     async def evaluate(
         self, hass: HomeAssistant
     ) -> tuple[list[Finding], int]:
         """Return (findings, entities_checked)."""
-        # Import here to avoid circular imports and ensure recorder is loaded
         from homeassistant.components.recorder.history import get_significant_states
 
         findings: list[Finding] = []
         checked = 0
 
-        # Identify analog sensor entities (those with unit_of_measurement)
-        sensor_entities = [
-            state
-            for state in hass.states.async_all("sensor")
-            if state.attributes.get("unit_of_measurement") is not None
-        ]
+        # Filter strictly for fluctuating environmental analog sensors
+        sensor_entities = []
+        for state in hass.states.async_all("sensor"):
+            unit = state.attributes.get("unit_of_measurement")
+            if not unit:
+                continue
+
+            device_class = state.attributes.get("device_class", "")
+            state_class = state.attributes.get("state_class", "")
+            entity_id_lower = state.entity_id.lower()
+
+            if device_class in _EXCLUDED_DEVICE_CLASSES:
+                continue
+            if state_class in _EXCLUDED_STATE_CLASSES:
+                continue
+            if any(sub in entity_id_lower for sub in _EXCLUDED_ENTITY_SUBSTRINGS):
+                continue
+
+            # Check if this is an environmental/fluctuating sensor
+            if device_class in _FREEZABLE_DEVICE_CLASSES or unit in _FREEZABLE_UNITS:
+                # Must be a valid numeric current state (not unavailable/unknown)
+                try:
+                    float(state.state)
+                except (ValueError, TypeError):
+                    continue
+                sensor_entities.append(state)
 
         if not sensor_entities:
             return findings, checked
 
         now = datetime.now(UTC)
         start_time = now - timedelta(hours=FROZEN_WINDOW_HOURS)
-
-        # Fetch history for all target entities in one batch query
         entity_ids = [s.entity_id for s in sensor_entities]
 
         try:
@@ -70,36 +165,38 @@ class FrozenSensorRule:
             states = history.get(entity_id, [])
             checked += 1
 
-            # Parse numeric values from history states
             numeric_values: list[float] = []
             for state in states:
                 try:
                     numeric_values.append(float(state.state))
                 except (ValueError, TypeError):
-                    # Skip non-numeric states (unavailable, unknown, etc.)
                     continue
 
+            # In Home Assistant, recorder only records state transitions.
+            # Few or no records in 6h is completely normal if value did not change,
+            # so we NEVER flag insufficient data as a defect.
             if len(numeric_values) < MIN_HISTORY_POINTS:
-                # Insufficient data — possible data gap
-                findings.append(
-                    Finding(
-                        entity_id=entity_id,
-                        rule="Frozen Sensor",
-                        category="Sensors",
-                        severity=SEVERITY_MINOR,
-                        description=(
-                            f"Insufficient history data: only {len(numeric_values)} "
-                            f"numeric data point(s) in the last {FROZEN_WINDOW_HOURS}h. "
-                            "Possible recorder gap or newly added entity."
-                        ),
-                    )
-                )
                 continue
 
-            # Check if all values are identical (Δ = 0.0)
+            # If all values are 0.0 (e.g. idle device or rain gauge with no rain), ignore
+            if all(v == 0.0 for v in numeric_values):
+                continue
+
+            # Check if all values are bit-for-bit identical across multiple samples
             unique_values = set(numeric_values)
             if len(unique_values) == 1:
                 frozen_value = numeric_values[0]
+                state_obj = hass.states.get(entity_id)
+                friendly_name = (
+                    state_obj.attributes.get("friendly_name", entity_id)
+                    if state_obj
+                    else entity_id
+                )
+                unit_str = (
+                    f" {state_obj.attributes.get('unit_of_measurement', '')}"
+                    if state_obj and state_obj.attributes.get("unit_of_measurement")
+                    else ""
+                )
                 findings.append(
                     Finding(
                         entity_id=entity_id,
@@ -107,11 +204,12 @@ class FrozenSensorRule:
                         category="Sensors",
                         severity=SEVERITY_MAJOR,
                         description=(
-                            f"Value frozen at {frozen_value} for >{FROZEN_WINDOW_HOURS}h "
-                            f"({len(numeric_values)} samples). "
+                            f"Sensor '{friendly_name}' value frozen at {frozen_value}{unit_str} "
+                            f"for >{FROZEN_WINDOW_HOURS}h ({len(numeric_values)} consecutive identical updates). "
                             "Possible firmware lockup or communication failure."
                         ),
                     )
                 )
 
         return findings, checked
+
