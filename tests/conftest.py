@@ -118,6 +118,9 @@ if "homeassistant" not in sys.modules:
     _ha_recorder = ModuleType("homeassistant.components.recorder")
     _ha_recorder.__path__ = []
 
+    _frontend_mod = ModuleType("homeassistant.components.frontend")
+    _frontend_mod.async_remove_panel = MagicMock()
+
     for mod_name, mod in [
         ("homeassistant", _ha_root),
         ("homeassistant.core", _ha_core),
@@ -130,6 +133,7 @@ if "homeassistant" not in sys.modules:
         ("homeassistant.helpers.entity_platform", _entity_platform),
         ("homeassistant.components", _ha_components),
         ("homeassistant.components.panel_custom", _panel_custom),
+        ("homeassistant.components.frontend", _frontend_mod),
         ("homeassistant.components.http", _http_mod),
         ("homeassistant.components.websocket_api", _ws_mod),
         ("homeassistant.components.sensor", _sensor_mod),

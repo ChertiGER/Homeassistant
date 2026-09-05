@@ -14,33 +14,14 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 from .coordinator import QualityAuditCoordinator
 
 _LOGGER = logging.getLogger(__name__)
-
-
-async def async_setup_platform(
-    hass: HomeAssistant,
-    config: ConfigType,
-    async_add_entities: AddEntitiesCallback,
-    discovery_info: DiscoveryInfoType | None = None,
-) -> None:
-    """Set up sensor entities via platform discovery."""
-    coordinator: QualityAuditCoordinator = hass.data[DOMAIN]["coordinator"]
-
-    async_add_entities(
-        [
-            QualityScoreSensor(coordinator),
-            FindingsCountSensor(coordinator),
-        ],
-        update_before_add=False,  # Coordinator already has data
-    )
 
 
 async def async_setup_entry(
@@ -110,20 +91,20 @@ class FindingsCountSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def native_value(self) -> int | None:
-        """Return the total findings count."""
+        """Return the total number of audit findings."""
         if self.coordinator.data is None:
             return None
         return len(self.coordinator.data.findings)
 
     @property
     def extra_state_attributes(self) -> dict:
-        """Return breakdown by severity."""
+        """Return counts broken down by severity."""
         if self.coordinator.data is None:
             return {}
-        findings = self.coordinator.data.findings
+        counts = self.coordinator.data.findings_by_severity()
         return {
-            "critical": sum(1 for f in findings if f.severity == "CRITICAL"),
-            "major": sum(1 for f in findings if f.severity == "MAJOR"),
-            "minor": sum(1 for f in findings if f.severity == "MINOR"),
+            "critical": counts.get("CRITICAL", 0),
+            "major": counts.get("MAJOR", 0),
+            "minor": counts.get("MINOR", 0),
             "last_audit": self.coordinator.data.timestamp,
         }

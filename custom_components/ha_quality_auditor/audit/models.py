@@ -70,3 +70,12 @@ class AuditResult:
                 1 for f in self.findings if f.severity == SEVERITY_MINOR
             ),
         }
+
+    def findings_by_severity(self) -> dict[str, int]:
+        """Return counts of findings grouped by severity."""
+        return {
+            SEVERITY_CRITICAL: sum(1 for f in self.findings if f.severity == SEVERITY_CRITICAL),
+            SEVERITY_MAJOR: sum(1 for f in self.findings if f.severity == SEVERITY_MAJOR),
+            SEVERITY_MINOR: sum(1 for f in self.findings if f.severity == SEVERITY_MINOR),
+        }
+
